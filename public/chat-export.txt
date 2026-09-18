@@ -1,0 +1,6 @@
+9/18/26, 10:00 AM - Messages and calls are end-to-end encrypted. Only people in this chat can read, listen to, or share them.
+9/18/26, 10:01 AM - Brandex: Welcome to the Marque desk.
+9/18/26, 10:02 AM - Brandex: Upload a WhatsApp .txt export to organize messages, labels, and to-dos.
+9/18/26, 10:03 AM - Brandex: Backup tab exports CSV for Google Sheets. Supabase sync is ready to wire.
+9/18/26, 10:05 AM - OutLawZ: Sample note: follow up on client files tomorrow.
+9/18/26, 10:06 AM - OutLawZ: Password gate is on. Default is brandex2026 — change it in src/App.tsx.
