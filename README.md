@@ -6,6 +6,11 @@ Password-gated WhatsApp correspondence desk for BrandEx.
 - Google Sheets CSV backup (active)
 - Supabase backup sync (feature-ready)
 
+## Live
+
+- App: https://marque-puce.vercel.app
+- GitHub: https://github.com/0utLawzz/marque
+
 ## Login
 
 Default password: `brandex2026`  
@@ -20,4 +25,4 @@ npm run dev
 
 ## Deploy
 
-Vercel (Vite). Linked GitHub repo deploys on every push to `main`.
+Vercel (Vite). Linked to this GitHub repo — every push to `main` deploys automatically.
