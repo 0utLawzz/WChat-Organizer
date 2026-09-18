@@ -1,0 +1,264 @@
+@import "tailwindcss";
+
+/* ============================================================
+   NEO-BRUTALISM THEME (BrandEx) — Complete Design System
+   ============================================================ */
+
+.theme-neobrutalism {
+  /* Color Palette — exact hex only */
+  --bg: #F0E8D0;           /* Warm Cream — main page background */
+  --bg-alt: #E8DFC7;       /* Deep Cream — alternate section bg */
+  --bg2: #0C0C0C;          /* Near-Black */
+  --panel: #FAF6EE;        /* Off-White — card surfaces (adjusted for readability) */
+  --panel-hover: #F0E8D0;
+  --black: #0C0C0C;
+  --border: #0C0C0C;
+  --accent: #C94A00;       /* Burnt Orange — CTA, primary */
+  --accent-primary: #C94A00;
+  --accent2: #0D9970;      /* Bright Teal — links, focus, logo */
+  --teal-lt: #0D9970;
+  --accent3: #D4A800;      /* Bold Yellow — warnings, stamps */
+  --yellow: #D4A800;
+  --accent4: #0A6B52;      /* Dark Teal — section bg, success */
+  --teal: #0A6B52;
+
+  /* Borders & Shadows */
+  --border-thin: 2px solid #0C0C0C;
+  --border-thick: 3px solid #0C0C0C;
+  --radius: 0px;
+  --shadow: 5px 5px 0 #0C0C0C;
+  --shadow-sm: 3px 3px 0 #0C0C0C;
+  --shadow-lg: 8px 8px 0 #0C0C0C;
+  --shadow-accent: 5px 5px 0 #C94A00;
+
+  /* Typography */
+  --font-display: "Bebas Neue", "Arial Black", Arial, sans-serif;
+  --font-body: "Space Grotesk", Arial, sans-serif;
+  --font-mono: "DM Mono", "Courier New", monospace;
+}
+
+/* Base */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--black);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Utility classes for Neo-Brutalism */
+.nb-panel {
+  background: var(--panel);
+  border: 3px solid var(--black);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.nb-panel:hover {
+  transform: translate(-3px, -3px);
+  box-shadow: 8px 8px 0 #0C0C0C;
+}
+
+.nb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  background: var(--accent);
+  color: #FFFFFF;
+  border: 2.5px solid var(--black);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  user-select: none;
+}
+
+.nb-btn:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 7px 7px 0 #0C0C0C;
+}
+
+.nb-btn:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 #0C0C0C;
+}
+
+.nb-btn-secondary {
+  background: var(--panel);
+  color: var(--black);
+}
+
+.nb-btn-teal {
+  background: var(--accent2);
+  color: #FFFFFF;
+}
+
+.nb-btn-yellow {
+  background: var(--accent3);
+  color: var(--black);
+}
+
+.nb-input {
+  background: var(--panel);
+  border: 2px solid var(--black);
+  border-radius: 0;
+  padding: 0.55rem 0.85rem;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--black);
+  outline: none;
+  width: 100%;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.nb-input::placeholder {
+  color: rgba(12, 12, 12, 0.35);
+}
+
+.nb-input:focus {
+  border-color: var(--accent);
+  border-width: 2.5px;
+  box-shadow: 0 0 0 2px rgba(201, 74, 0, 0.20);
+}
+
+.nb-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 2px solid;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+}
+
+.nb-stamp {
+  font-family: var(--font-display);
+  font-size: 20px;
+  letter-spacing: 2px;
+  border: 3px solid var(--black);
+  border-radius: 6px;
+  padding: 0.25rem 0.75rem;
+  display: inline-block;
+}
+
+.nb-stamp-yellow {
+  background: var(--accent3);
+  color: var(--black);
+}
+
+.nb-stamp-teal {
+  background: var(--accent2);
+  color: #FFFFFF;
+}
+
+.nb-stamp-orange {
+  background: var(--accent);
+  color: #FFFFFF;
+}
+
+/* Navbar */
+.nb-navbar {
+  background: var(--bg2);
+  height: 58px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  border-bottom: 3px solid var(--black);
+  display: flex;
+  align-items: center;
+  padding: 0 1.5rem;
+  gap: 1.5rem;
+}
+
+.nb-logo {
+  font-family: var(--font-display);
+  font-size: 22px;
+  letter-spacing: 1px;
+  color: #FAF6EE;
+}
+
+.nb-logo .dot {
+  color: var(--accent);
+}
+
+.nb-logo .stories {
+  color: var(--accent2);
+}
+
+/* Tabs */
+.nb-tabs {
+  background: var(--bg);
+  border-bottom: 3px solid var(--black);
+  display: flex;
+  gap: 0;
+}
+
+.nb-tab {
+  padding: 0.75rem 1.25rem;
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 13px;
+  color: rgba(12, 12, 12, 0.55);
+  border-right: 1.5px solid #ddd4ba;
+  cursor: pointer;
+  background: transparent;
+  border-top: none;
+  border-left: none;
+  border-bottom: 4px solid transparent;
+  transition: background 0.12s, color 0.12s;
+}
+
+.nb-tab:hover {
+  background: var(--bg-alt);
+}
+
+.nb-tab.active {
+  color: var(--black);
+  border-bottom-color: var(--accent);
+}
+
+/* Message row */
+.nb-msg {
+  border-bottom: 2px solid rgba(12, 12, 12, 0.08);
+  padding: 0.85rem 1rem;
+  transition: background 0.1s;
+}
+
+.nb-msg:hover {
+  background: var(--bg-alt);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-alt);
+  border-left: 2px solid var(--black);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--black);
+  border: 2px solid var(--bg-alt);
+}
