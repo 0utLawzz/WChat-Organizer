@@ -2,9 +2,11 @@
 
 Password-gated WhatsApp correspondence desk for BrandEx.
 
-- Labels, saved messages, to-dos
-- Google Sheets CSV backup (active)
-- Supabase backup sync (feature-ready)
+- **Labels** and **Types** (Trademark, Copyright, Opposition, Ledger Update, NTN — add your own)
+- Saved messages, enhanced to-dos (due date, time, period, priority, notes)
+- Progress & agent memory journal
+- Google Sheets CSV one-click sync
+- Supabase desk-state backup
 
 ## Live
 
@@ -23,6 +25,31 @@ npm install
 npm run dev
 ```
 
+## Supabase setup
+
+1. In the [Supabase SQL editor](https://supabase.com/dashboard), run the `SETUP_SQL` from `src/lib/supabase.ts` (creates `marque_desk` + open RLS policy for the publishable key).
+2. Defaults are already in code. For production on **Vercel**, add environment variables:
+
+| Name | Value |
+|------|--------|
+| `VITE_SUPABASE_URL` | `https://bguxpeccimvvixwjhdjc.supabase.co` |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | your publishable key |
+
+Redeploy after setting env vars.
+
+## Google Sheets
+
+1. Open **Backup & Sync** in the app.
+2. Paste your Google Sheet URL.
+3. Optional: Apps Script webhook URL for auto-append.
+4. Click sync — CSV downloads, clipboard copy, sheet opens for File → Import.
+
 ## Deploy
 
 Vercel (Vite). Linked to this GitHub repo — every push to `main` deploys automatically.
+
+## Community
+
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
