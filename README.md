@@ -1,4 +1,4 @@
-# Marque — Neo-Brutalism Chat Organizer
+# Whatsapp Chat Organizer
 
 Password-gated WhatsApp correspondence desk for BrandEx.
 
