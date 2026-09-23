@@ -14,6 +14,7 @@ import {
   extractSheetId,
   sheetEditUrl,
   sheetCsvUrl,
+  getSupabase,
 } from "./lib/supabase";
 import {
   Upload,
@@ -69,6 +70,10 @@ interface Todo {
   period?: "none" | "today" | "this_week" | "this_month" | "later";
   priority?: "low" | "medium" | "high";
   notes?: string;
+  /** Label ids assigned to this todo */
+  labelIds?: string[];
+  /** Type ids assigned to this todo */
+  typeIds?: string[];
 }
 
 interface JournalEntry {
@@ -89,6 +94,12 @@ interface PersistedState {
   googleSheetUrl: string;
   googleWebhookUrl: string;
   pageSize: 100 | 250;
+  /** Display name overrides for senders */
+  senderAliases?: Record<string, string>;
+  /** Senders hidden from sidebar / filtered out */
+  hiddenSenders?: string[];
+  /** Optional workspace title */
+  workspaceName?: string;
 }
 
 const LS_KEY = "marque-nb-state-v2";
@@ -131,9 +142,13 @@ function emptyState(): PersistedState {
     savedIds: [],
     todos: [],
     journal: [],
-    googleSheetUrl: "",
+    googleSheetUrl:
+      "https://docs.google.com/spreadsheets/d/1PyvUTN9zR3kgcYIjhZu1inXoX0ZsIvD2SSo1yxrZ26o/edit?gid=307425405",
     googleWebhookUrl: "",
     pageSize: 100,
+    senderAliases: {},
+    hiddenSenders: [],
+    workspaceName: "BRANDEX",
   };
 }
 
@@ -149,6 +164,8 @@ function normalizeTodo(t: Partial<Todo> & { id: string; text: string }): Todo {
     period: t.period ?? "none",
     priority: t.priority ?? "medium",
     notes: t.notes,
+    labelIds: Array.isArray(t.labelIds) ? t.labelIds : [],
+    typeIds: Array.isArray(t.typeIds) ? t.typeIds : [],
   };
 }
 
@@ -164,9 +181,12 @@ function normalizeState(raw: unknown): PersistedState {
     savedIds: s.savedIds ?? [],
     todos: Array.isArray(s.todos) ? s.todos.map((t) => normalizeTodo(t)) : [],
     journal: Array.isArray(s.journal) ? s.journal : [],
-    googleSheetUrl: s.googleSheetUrl ?? "",
+    googleSheetUrl: s.googleSheetUrl ?? base.googleSheetUrl,
     googleWebhookUrl: s.googleWebhookUrl ?? "",
     pageSize: s.pageSize === 250 ? 250 : 100,
+    senderAliases: s.senderAliases ?? {},
+    hiddenSenders: s.hiddenSenders ?? [],
+    workspaceName: s.workspaceName ?? "BRANDEX",
   };
 }
 
@@ -316,17 +336,27 @@ function Desk({ onLogout }: { onLogout: () => void }) {
     Todo["priority"]
   >("medium");
   const [newTodoNotes, setNewTodoNotes] = useState("");
+  const [newTodoLabelIds, setNewTodoLabelIds] = useState<string[]>([]);
+  const [newTodoTypeIds, setNewTodoTypeIds] = useState<string[]>([]);
+  const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   const [newJournalText, setNewJournalText] = useState("");
   const [newJournalKind, setNewJournalKind] = useState<
     JournalEntry["kind"]
   >("progress");
   const [activeTab, setActiveTab] = useState<
-    "messages" | "todos" | "progress" | "backup" | "daily"
+    "messages" | "todos" | "progress" | "backup" | "daily" | "db"
   >("messages");
   const [page, setPage] = useState(0);
   const [syncNote, setSyncNote] = useState("");
   const [dbStatus, setDbStatus] = useState<"idle" | "connecting" | "connected" | "error">("idle");
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<null | {
+    title: string;
+    body: string;
+    onConfirm: () => void;
+  }>(null);
+  const [dbEntries, setDbEntries] = useState<{ id: string; updated_at?: string; payload?: unknown }[]>([]);
+  const [printMode, setPrintMode] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [persisted, setPersisted] = useState<PersistedState>(loadPersisted);
@@ -387,17 +417,20 @@ function Desk({ onLogout }: { onLogout: () => void }) {
   }, []);
 
   const senders = useMemo(() => {
+    const hidden = new Set(persisted.hiddenSenders ?? []);
     const counts = new Map<string, number>();
     for (const m of messages) {
-      if (m.sender) counts.set(m.sender, (counts.get(m.sender) ?? 0) + 1);
+      if (m.sender && !hidden.has(m.sender))
+        counts.set(m.sender, (counts.get(m.sender) ?? 0) + 1);
     }
     return Array.from(counts.entries())
       .sort((a, b) => b[1] - a[1])
       .map(([name]) => name);
-  }, [messages]);
+  }, [messages, persisted.hiddenSenders]);
 
   const filtered = useMemo(() => {
-    let list = messages;
+    const hidden = new Set(persisted.hiddenSenders ?? []);
+    let list = messages.filter((m) => !m.sender || !hidden.has(m.sender));
     if (showSavedOnly) {
       list = list.filter((m) => persisted.savedIds.includes(m.id));
     }
@@ -468,33 +501,111 @@ function Desk({ onLogout }: { onLogout: () => void }) {
     });
   }
 
-  function addTodo(text: string, messageId?: string) {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    setPersisted((p) => ({
-      ...p,
-      todos: [
-        {
-          id: `t${Date.now()}`,
-          text: trimmed,
-          done: false,
-          messageId,
-          createdAt: Date.now(),
-          dueDate: newTodoDueDate || undefined,
-          dueTime: newTodoDueTime || undefined,
-          period: newTodoPeriod ?? "none",
-          priority: newTodoPriority ?? "medium",
-          notes: newTodoNotes.trim() || undefined,
-        },
-        ...p.todos,
-      ],
-    }));
+  function resetTodoForm() {
     setNewTodoText("");
     setNewTodoDueDate("");
     setNewTodoDueTime("");
     setNewTodoPeriod("none");
     setNewTodoPriority("medium");
     setNewTodoNotes("");
+    setNewTodoLabelIds([]);
+    setNewTodoTypeIds([]);
+    setEditingTodoId(null);
+  }
+
+  function addTodo(text: string, messageId?: string) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    if (editingTodoId) {
+      setPersisted((p) => ({
+        ...p,
+        todos: p.todos.map((t) =>
+          t.id === editingTodoId
+            ? {
+                ...t,
+                text: trimmed,
+                dueDate: newTodoDueDate || undefined,
+                dueTime: newTodoDueTime || undefined,
+                period: newTodoPeriod ?? "none",
+                priority: newTodoPriority ?? "medium",
+                notes: newTodoNotes.trim() || undefined,
+                labelIds: [...newTodoLabelIds],
+                typeIds: [...newTodoTypeIds],
+              }
+            : t,
+        ),
+      }));
+    } else {
+      setPersisted((p) => ({
+        ...p,
+        todos: [
+          {
+            id: `t${Date.now()}`,
+            text: trimmed,
+            done: false,
+            messageId,
+            createdAt: Date.now(),
+            dueDate: newTodoDueDate || undefined,
+            dueTime: newTodoDueTime || undefined,
+            period: newTodoPeriod ?? "none",
+            priority: newTodoPriority ?? "medium",
+            notes: newTodoNotes.trim() || undefined,
+            labelIds: [...newTodoLabelIds],
+            typeIds: [...newTodoTypeIds],
+          },
+          ...p.todos,
+        ],
+      }));
+    }
+    resetTodoForm();
+  }
+
+  function startEditTodo(t: Todo) {
+    setEditingTodoId(t.id);
+    setNewTodoText(t.text);
+    setNewTodoDueDate(t.dueDate ?? "");
+    setNewTodoDueTime(t.dueTime ?? "");
+    setNewTodoPeriod(t.period ?? "none");
+    setNewTodoPriority(t.priority ?? "medium");
+    setNewTodoNotes(t.notes ?? "");
+    setNewTodoLabelIds(t.labelIds ?? []);
+    setNewTodoTypeIds(t.typeIds ?? []);
+    setActiveTab("todos");
+  }
+
+  function displaySender(name: string): string {
+    return persisted.senderAliases?.[name] ?? name;
+  }
+
+  function renameSender(original: string) {
+    const current = displaySender(original);
+    const next = window.prompt("Rename chat / contact:", current);
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (!trimmed) return;
+    setPersisted((p) => ({
+      ...p,
+      senderAliases: { ...(p.senderAliases ?? {}), [original]: trimmed },
+    }));
+  }
+
+  function removeSender(original: string) {
+    if (
+      !window.confirm(
+        `Remove all messages from "${displaySender(original)}" and hide this chat?`,
+      )
+    )
+      return;
+    setMessages((prev) => prev.filter((m) => m.sender !== original));
+    setPersisted((p) => ({
+      ...p,
+      hiddenSenders: [...new Set([...(p.hiddenSenders ?? []), original])],
+    }));
+    if (activeSender === original) setActiveSender(null);
+  }
+
+  function requestConfirm(title: string, body: string, onConfirm: () => void) {
+    setConfirmAction({ title, body, onConfirm });
   }
 
   function toggleTodo(id: string) {
@@ -641,7 +752,7 @@ function Desk({ onLogout }: { onLogout: () => void }) {
     URL.revokeObjectURL(url);
   }
 
-  async function syncGoogleSheet() {
+  async function doSyncGoogleSheet() {
     const csv = buildCsv();
     try {
       await navigator.clipboard.writeText(csv);
@@ -669,7 +780,6 @@ function Desk({ onLogout }: { onLogout: () => void }) {
       }
     }
 
-    // Browser cannot write to Google Sheets without a webhook — download CSV for Import
     downloadNamed(
       `brandex-workspace-${new Date().toISOString().slice(0, 10)}.csv`,
       csv,
@@ -685,6 +795,16 @@ function Desk({ onLogout }: { onLogout: () => void }) {
         "CSV downloaded. Paste a Google Sheet link and optional Apps Script webhook for direct push.",
       );
     }
+  }
+
+  function syncGoogleSheet() {
+    requestConfirm(
+      "Sync to Google Sheet?",
+      "This will download/copy CSV and optionally POST to your Apps Script webhook. Continue?",
+      () => {
+        void doSyncGoogleSheet();
+      },
+    );
   }
 
   async function pullPublishedSheet() {
@@ -708,7 +828,7 @@ function Desk({ onLogout }: { onLogout: () => void }) {
     }
   }
 
-  async function supabasePush() {
+  async function doSupabasePush() {
     try {
       await pushDeskState({
         persisted,
@@ -716,15 +836,27 @@ function Desk({ onLogout }: { onLogout: () => void }) {
         savedAt: new Date().toISOString(),
       });
       setSyncNote("Saved to Supabase.");
+      setDbStatus("connected");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Supabase error";
       setSyncNote(
         `Supabase needs a table. Open SQL editor and run the setup SQL. (${msg})`,
       );
+      setDbStatus("error");
     }
   }
 
-  async function supabasePull() {
+  function supabasePush() {
+    requestConfirm(
+      "Push to Supabase?",
+      "This will overwrite the cloud desk state with your current labels, types, todos, and journal. Continue?",
+      () => {
+        void doSupabasePush();
+      },
+    );
+  }
+
+  async function doSupabasePull() {
     try {
       const payload = await pullDeskState<{ persisted?: PersistedState }>();
       if (!payload?.persisted) {
@@ -733,10 +865,64 @@ function Desk({ onLogout }: { onLogout: () => void }) {
       }
       setPersisted(normalizeState(payload.persisted));
       setSyncNote("Loaded desk state from Supabase.");
+      setDbStatus("connected");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Supabase error";
       setSyncNote(`Could not load from Supabase. (${msg})`);
+      setDbStatus("error");
     }
+  }
+
+  function supabasePull() {
+    requestConfirm(
+      "Pull from Supabase?",
+      "This will replace your local labels, types, todos, and journal with the cloud backup. Local-only data may be lost. Continue?",
+      () => {
+        void doSupabasePull();
+      },
+    );
+  }
+
+  async function loadDbEntries() {
+    try {
+      const { data, error } = await getSupabase()
+        .from("marque_desk")
+        .select("id, updated_at, payload")
+        .order("updated_at", { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      setDbEntries(data ?? []);
+      setSyncNote(`Loaded ${data?.length ?? 0} database row(s).`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "DB error";
+      setSyncNote(`Could not list database entries. (${msg})`);
+    }
+  }
+
+  async function deleteDbEntry(id: string) {
+    requestConfirm(
+      "Delete database row?",
+      `Permanently delete row "${id}" from Supabase? This cannot be undone.`,
+      async () => {
+        try {
+          const { error } = await getSupabase().from("marque_desk").delete().eq("id", id);
+          if (error) throw error;
+          setDbEntries((rows) => rows.filter((r) => r.id !== id));
+          setSyncNote(`Deleted row ${id}.`);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Delete failed";
+          setSyncNote(msg);
+        }
+      },
+    );
+  }
+
+  function printMyDay() {
+    setPrintMode(true);
+    setTimeout(() => {
+      window.print();
+      setPrintMode(false);
+    }, 300);
   }
 
   const openTodos = persisted.todos.filter((t) => !t.done);
@@ -776,7 +962,7 @@ function Desk({ onLogout }: { onLogout: () => void }) {
           onChange={handleUpload}
         />
         <button className="nb-btn" onClick={() => fileInputRef.current?.click()}>
-          <Upload size={14} /> Upload .txt / .zip
+          <Upload size={14} /> UPLOAD
         </button>
         <button
           className="nb-btn nb-btn-secondary"
@@ -826,6 +1012,12 @@ function Desk({ onLogout }: { onLogout: () => void }) {
           {dbStatus === "connecting" && (
             <span className="ml-1 inline-block size-2 rounded-full bg-yellow-500 animate-pulse" title="Connecting…" />
           )}
+        </button>
+        <button
+          className={`nb-tab ${activeTab === "db" ? "active" : ""}`}
+          onClick={() => setActiveTab("db")}
+        >
+          Database
         </button>
       </div>
 
@@ -965,24 +1157,88 @@ function Desk({ onLogout }: { onLogout: () => void }) {
               className="mb-2 text-xs font-medium uppercase tracking-wider opacity-50"
               style={{ fontFamily: "var(--font-mono)" }}
             >
-              Senders
+              Chats
             </div>
-            <div className="flex max-h-48 flex-col gap-1 overflow-y-auto">
-              {senders.slice(0, 12).map((s) => (
-                <FilterChip
-                  key={s}
-                  active={activeSender === s}
-                  onClick={() => setActiveSender(activeSender === s ? null : s)}
-                >
-                  <span
-                    className="grid size-5 place-items-center rounded-sm text-[9px] font-bold text-white"
-                    style={{ background: avatarColor(s) }}
+            <div className="flex max-h-56 flex-col gap-1 overflow-y-auto">
+              {senders.slice(0, 20).map((s) => (
+                <div key={s} className="flex items-center gap-1">
+                  <FilterChip
+                    active={activeSender === s}
+                    onClick={() =>
+                      setActiveSender(activeSender === s ? null : s)
+                    }
                   >
-                    {initials(s)}
-                  </span>
-                  <span className="truncate">{s}</span>
-                </FilterChip>
+                    <span
+                      className="grid size-5 place-items-center rounded-sm text-[9px] font-bold text-white"
+                      style={{ background: avatarColor(s) }}
+                    >
+                      {initials(displaySender(s))}
+                    </span>
+                    <span className="truncate max-w-[90px]">
+                      {displaySender(s)}
+                    </span>
+                  </FilterChip>
+                  <button
+                    title="Rename"
+                    className="opacity-40 hover:opacity-100 text-[10px] px-1"
+                    onClick={() => renameSender(s)}
+                  >
+                    ✎
+                  </button>
+                  <button
+                    title="Remove chat"
+                    className="opacity-40 hover:opacity-100"
+                    onClick={() => removeSender(s)}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
               ))}
+            </div>
+          </div>
+
+          {/* Compact Progress & Memory widget */}
+          <div className="nb-panel p-3">
+            <div
+              className="mb-2 flex items-center justify-between text-xs font-medium uppercase tracking-wider opacity-50"
+              style={{ fontFamily: "var(--font-mono)" }}
+            >
+              <span>Progress</span>
+              <button
+                className="opacity-60 hover:opacity-100 normal-case tracking-normal"
+                onClick={() => setActiveTab("progress")}
+              >
+                Open →
+              </button>
+            </div>
+            <div className="space-y-1.5 max-h-28 overflow-y-auto">
+              {persisted.journal.slice(0, 4).map((j) => (
+                <div key={j.id} className="text-[11px] leading-snug">
+                  <span
+                    className="nb-badge text-[9px] uppercase mr-1"
+                    style={{
+                      borderColor:
+                        j.kind === "progress"
+                          ? "#0D9970"
+                          : j.kind === "memory"
+                            ? "#8B2FC9"
+                            : "#C94A00",
+                      color:
+                        j.kind === "progress"
+                          ? "#0D9970"
+                          : j.kind === "memory"
+                            ? "#8B2FC9"
+                            : "#C94A00",
+                    }}
+                  >
+                    {j.kind}
+                  </span>
+                  <span className="opacity-80 line-clamp-2">{j.text}</span>
+                </div>
+              ))}
+              {persisted.journal.length === 0 && (
+                <p className="text-[11px] opacity-40">No entries yet</p>
+              )}
             </div>
           </div>
         </aside>
@@ -1039,7 +1295,7 @@ function Desk({ onLogout }: { onLogout: () => void }) {
                     </div>
                     <p className="text-sm opacity-60">
                       {messages.length === 0
-                        ? "No dummy data. Click Upload .txt and choose a WhatsApp chat export."
+                        ? "No dummy data. Click UPLOAD and choose a WhatsApp .txt or .zip export."
                         : "No messages match the current filters."}
                     </p>
                   </div>
@@ -1331,20 +1587,25 @@ function Desk({ onLogout }: { onLogout: () => void }) {
                 className="mb-4 text-2xl"
                 style={{ fontFamily: "var(--font-display)", letterSpacing: "1px" }}
               >
-                TO-DOS
+                TO-DOS {editingTodoId ? "· Editing" : ""}
               </h2>
               <div className="mb-4 space-y-3">
                 <div className="flex flex-wrap gap-2">
                   <input
                     className="nb-input min-w-[200px] flex-1"
-                    placeholder="Add a to-do…"
+                    placeholder={editingTodoId ? "Edit to-do…" : "Add a to-do…"}
                     value={newTodoText}
                     onChange={(e) => setNewTodoText(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && addTodo(newTodoText)}
                   />
                   <button className="nb-btn" onClick={() => addTodo(newTodoText)}>
-                    <Plus size={14} /> Add
+                    <Plus size={14} /> {editingTodoId ? "Save" : "Add"}
                   </button>
+                  {editingTodoId && (
+                    <button className="nb-btn nb-btn-secondary" onClick={resetTodoForm}>
+                      Cancel
+                    </button>
+                  )}
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                   <label className="flex flex-col gap-1 text-xs opacity-70">
@@ -1408,6 +1669,68 @@ function Desk({ onLogout }: { onLogout: () => void }) {
                   value={newTodoNotes}
                   onChange={(e) => setNewTodoNotes(e.target.value)}
                 />
+                {/* Labels (tags) — separate from Types */}
+                <div>
+                  <div className="mb-1 text-[11px] font-medium uppercase tracking-wider opacity-50 flex items-center gap-1">
+                    <Tag size={11} /> Labels
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {persisted.labels.map((l) => {
+                      const on = newTodoLabelIds.includes(l.id);
+                      const c = CHIP_COLORS[l.color] ?? CHIP_COLORS.orange!;
+                      return (
+                        <button
+                          key={l.id}
+                          type="button"
+                          className="nb-badge text-[11px]"
+                          style={{
+                            borderColor: c.border,
+                            color: on ? "#fff" : c.text,
+                            background: on ? c.border : c.bg,
+                          }}
+                          onClick={() =>
+                            setNewTodoLabelIds((ids) =>
+                              on ? ids.filter((x) => x !== l.id) : [...ids, l.id],
+                            )
+                          }
+                        >
+                          {l.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                {/* Types (work categories) — separate from Labels */}
+                <div>
+                  <div className="mb-1 text-[11px] font-medium uppercase tracking-wider opacity-50 flex items-center gap-1">
+                    <Layers size={11} /> Types
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {persisted.types.map((ty) => {
+                      const on = newTodoTypeIds.includes(ty.id);
+                      const c = CHIP_COLORS[ty.color] ?? CHIP_COLORS.orange!;
+                      return (
+                        <button
+                          key={ty.id}
+                          type="button"
+                          className="nb-badge text-[11px]"
+                          style={{
+                            borderColor: c.border,
+                            color: on ? "#fff" : c.text,
+                            background: on ? c.border : c.bg,
+                          }}
+                          onClick={() =>
+                            setNewTodoTypeIds((ids) =>
+                              on ? ids.filter((x) => x !== ty.id) : [...ids, ty.id],
+                            )
+                          }
+                        >
+                          {ty.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
               <div className="space-y-2">
                 {persisted.todos.length === 0 && (
@@ -1472,11 +1795,54 @@ function Desk({ onLogout }: { onLogout: () => void }) {
                               {[t.dueDate, t.dueTime].filter(Boolean).join(" · ")}
                             </span>
                           )}
+                          {(t.labelIds ?? []).map((lid) => {
+                            const l = persisted.labels.find((x) => x.id === lid);
+                            if (!l) return null;
+                            const c = CHIP_COLORS[l.color] ?? CHIP_COLORS.orange!;
+                            return (
+                              <span
+                                key={lid}
+                                className="nb-badge"
+                                style={{
+                                  borderColor: c.border,
+                                  color: c.text,
+                                  background: c.bg,
+                                }}
+                              >
+                                {l.name}
+                              </span>
+                            );
+                          })}
+                          {(t.typeIds ?? []).map((tid) => {
+                            const ty = persisted.types.find((x) => x.id === tid);
+                            if (!ty) return null;
+                            const c = CHIP_COLORS[ty.color] ?? CHIP_COLORS.orange!;
+                            return (
+                              <span
+                                key={tid}
+                                className="nb-badge"
+                                style={{
+                                  borderColor: c.border,
+                                  color: c.text,
+                                  background: c.bg,
+                                }}
+                              >
+                                {ty.name}
+                              </span>
+                            );
+                          })}
                           {t.notes && (
                             <span className="italic opacity-80">{t.notes}</span>
                           )}
                         </div>
                       </div>
+                      <button
+                        title="Edit"
+                        onClick={() => startEditTodo(t)}
+                        className="opacity-40 hover:opacity-100 mr-1"
+                      >
+                        ✎
+                      </button>
                       <button
                         onClick={() => removeTodo(t.id)}
                         className="opacity-40 hover:opacity-100"
@@ -1614,11 +1980,25 @@ function Desk({ onLogout }: { onLogout: () => void }) {
                     <FileSpreadsheet size={20} style={{ color: "var(--accent2)" }} />
                     <span className="font-medium">Google Sheets</span>
                   </div>
+                  <p className="mb-2 text-xs opacity-60">
+                    <strong>Sheet URL</strong> — your Google Spreadsheet. Default
+                    BrandEx sheet is pre-filled.{" "}
+                    <a
+                      href="https://docs.google.com/spreadsheets/d/1PyvUTN9zR3kgcYIjhZu1inXoX0ZsIvD2SSo1yxrZ26o/edit?gid=307425405"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline"
+                      style={{ color: "var(--accent2)" }}
+                    >
+                      Open default sheet ↗
+                    </a>
+                  </p>
                   <p className="mb-3 text-xs opacity-60">
-                    Browsers cannot write directly to Google Sheets. For real
-                    one-click push: deploy an Apps Script web app that accepts
-                    POST CSV and paste its URL below. Without a webhook, Sync
-                    copies CSV and opens the sheet for File → Import.
+                    <strong>Webhook</strong> — optional Apps Script web-app URL.
+                    Without it, Sync downloads CSV + opens the sheet for File →
+                    Import. With a webhook, Sync POSTs CSV for one-click append.
+                    Create via Extensions → Apps Script → deploy as web app
+                    (anyone, execute as you).
                   </p>
                   <input
                     className="nb-input mb-3 text-xs"
@@ -1633,7 +2013,7 @@ function Desk({ onLogout }: { onLogout: () => void }) {
                   />
                   <input
                     className="nb-input mb-3 text-xs"
-                    placeholder="Apps Script webhook URL (required for direct push)"
+                    placeholder="Apps Script webhook URL (optional, for direct push)"
                     value={persisted.googleWebhookUrl}
                     onChange={(e) =>
                       setPersisted((p) => ({
@@ -1743,7 +2123,7 @@ function Desk({ onLogout }: { onLogout: () => void }) {
                 </div>
               </div>
 
-              <div className="mt-6">
+              <div className="mt-6 flex flex-wrap gap-2">
                 <button
                   className="nb-btn nb-btn-secondary"
                   onClick={() =>
@@ -1760,10 +2140,207 @@ function Desk({ onLogout }: { onLogout: () => void }) {
                 >
                   <Download size={14} /> Full JSON Backup
                 </button>
+                <button className="nb-btn" onClick={printMyDay}>
+                  <Calendar size={14} /> Print My Day
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "db" && (
+            <div className="nb-panel p-5">
+              <h2
+                className="mb-2 text-2xl"
+                style={{ fontFamily: "var(--font-display)", letterSpacing: "1px" }}
+              >
+                DATABASE STORE
+              </h2>
+              <p className="mb-4 text-sm opacity-60">
+                View and delete rows stored in Supabase table <code>marque_desk</code>.
+                Default row id is <code>default</code>.
+              </p>
+              <div className="mb-4 flex flex-wrap gap-2">
+                <button className="nb-btn" onClick={() => void loadDbEntries()}>
+                  <RefreshCw size={14} /> Refresh entries
+                </button>
+                <button className="nb-btn nb-btn-secondary" onClick={supabasePull}>
+                  <Download size={14} /> Pull default into app
+                </button>
+              </div>
+              {dbEntries.length === 0 && (
+                <p className="text-sm opacity-50">
+                  No rows loaded yet. Click Refresh (requires table + RLS).
+                </p>
+              )}
+              <div className="space-y-2">
+                {dbEntries.map((row) => (
+                  <div
+                    key={row.id}
+                    className="flex items-start gap-3 border-2 border-black/10 p-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-sm">{row.id}</div>
+                      <div
+                        className="text-[11px] opacity-50"
+                        style={{ fontFamily: "var(--font-mono)" }}
+                      >
+                        {row.updated_at
+                          ? new Date(row.updated_at).toLocaleString()
+                          : "—"}
+                      </div>
+                      <pre className="mt-2 max-h-24 overflow-auto text-[10px] opacity-60">
+                        {JSON.stringify(row.payload, null, 0).slice(0, 280)}
+                        …
+                      </pre>
+                    </div>
+                    <button
+                      className="nb-btn nb-btn-secondary text-xs"
+                      onClick={() => void deleteDbEntry(row.id)}
+                    >
+                      <Trash2 size={12} /> Delete
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
           )}
         </main>
+
+        {/* Confirm modal */}
+        {confirmAction && (
+          <div
+            className="fixed inset-0 z-50 grid place-items-center p-4"
+            style={{ background: "rgba(12,12,12,0.45)" }}
+            onClick={() => setConfirmAction(null)}
+          >
+            <div
+              className="nb-panel max-w-md w-full p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3
+                className="mb-2 text-xl"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                {confirmAction.title}
+              </h3>
+              <p className="mb-5 text-sm opacity-70">{confirmAction.body}</p>
+              <div className="flex gap-2 justify-end">
+                <button
+                  className="nb-btn nb-btn-secondary"
+                  onClick={() => setConfirmAction(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="nb-btn"
+                  onClick={() => {
+                    const fn = confirmAction.onConfirm;
+                    setConfirmAction(null);
+                    fn();
+                  }}
+                >
+                  Confirm
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Printable My Day sheet */}
+        {printMode && (
+          <div
+            id="print-my-day"
+            className="fixed inset-0 z-[60] overflow-auto p-8"
+            style={{ background: "#fff", color: "#0C0C0C" }}
+          >
+            <div className="mx-auto max-w-2xl">
+              <div className="mb-6 border-b-4 border-black pb-4">
+                <h1
+                  className="text-3xl font-bold tracking-wide"
+                  style={{ fontFamily: "var(--font-display, Impact, sans-serif)" }}
+                >
+                  MY DAY · {persisted.workspaceName ?? "BRANDEX"}
+                </h1>
+                <p className="text-sm opacity-60">
+                  {new Date().toLocaleDateString(undefined, {
+                    weekday: "long",
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                  })}
+                </p>
+              </div>
+              <section className="mb-6">
+                <h2 className="mb-2 text-lg font-bold uppercase tracking-wider">
+                  Open To-Dos
+                </h2>
+                <ul className="space-y-2">
+                  {persisted.todos
+                    .filter((t) => !t.done)
+                    .map((t) => (
+                      <li key={t.id} className="border-b border-black/10 pb-2 text-sm">
+                        ☐ {t.text}
+                        {(t.dueDate || t.priority) && (
+                          <span className="ml-2 text-xs opacity-50">
+                            {[t.dueDate, t.priority].filter(Boolean).join(" · ")}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  {persisted.todos.filter((t) => !t.done).length === 0 && (
+                    <li className="text-sm opacity-50">No open to-dos</li>
+                  )}
+                </ul>
+              </section>
+              <section className="mb-6">
+                <h2 className="mb-2 text-lg font-bold uppercase tracking-wider">
+                  Progress & Memory
+                </h2>
+                <ul className="space-y-2">
+                  {persisted.journal.slice(0, 12).map((j) => (
+                    <li key={j.id} className="text-sm">
+                      <span className="font-bold uppercase text-xs mr-2">
+                        {j.kind}
+                      </span>
+                      {j.text}
+                    </li>
+                  ))}
+                  {persisted.journal.length === 0 && (
+                    <li className="text-sm opacity-50">No journal entries</li>
+                  )}
+                </ul>
+              </section>
+              <section>
+                <h2 className="mb-2 text-lg font-bold uppercase tracking-wider">
+                  Messages today (sample)
+                </h2>
+                <ul className="space-y-1 text-sm">
+                  {messages
+                    .filter((m) => {
+                      const d = new Date(m.timestamp);
+                      const now = new Date();
+                      return (
+                        d.getDate() === now.getDate() &&
+                        d.getMonth() === now.getMonth() &&
+                        d.getFullYear() === now.getFullYear()
+                      );
+                    })
+                    .slice(0, 20)
+                    .map((m) => (
+                      <li key={m.id}>
+                        <span className="opacity-50">{m.time}</span>{" "}
+                        <strong>{displaySender(m.sender ?? "System")}</strong>:{" "}
+                        {m.isMedia ? "📎 Media" : m.text.slice(0, 120)}
+                      </li>
+                    ))}
+                </ul>
+              </section>
+              <p className="mt-10 text-center text-xs opacity-40">
+                Generated by BrandEx Workspace · marque
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Global right rail — todos + countdown on every page */}
         <aside className="hidden w-72 shrink-0 flex-col gap-4 xl:flex">
