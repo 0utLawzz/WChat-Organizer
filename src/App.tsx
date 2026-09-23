@@ -2172,35 +2172,170 @@ function Desk({ onLogout }: { onLogout: () => void }) {
                   No rows loaded yet. Click Refresh (requires table + RLS).
                 </p>
               )}
-              <div className="space-y-2">
-                {dbEntries.map((row) => (
-                  <div
-                    key={row.id}
-                    className="flex items-start gap-3 border-2 border-black/10 p-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium text-sm">{row.id}</div>
-                      <div
-                        className="text-[11px] opacity-50"
-                        style={{ fontFamily: "var(--font-mono)" }}
-                      >
-                        {row.updated_at
-                          ? new Date(row.updated_at).toLocaleString()
-                          : "—"}
-                      </div>
-                      <pre className="mt-2 max-h-24 overflow-auto text-[10px] opacity-60">
-                        {JSON.stringify(row.payload, null, 0).slice(0, 280)}
-                        …
-                      </pre>
-                    </div>
-                    <button
-                      className="nb-btn nb-btn-secondary text-xs"
-                      onClick={() => void deleteDbEntry(row.id)}
+              <div className="space-y-3">
+                {dbEntries.map((row) => {
+                  const p = (row.payload ?? {}) as {
+                    savedAt?: string;
+                    messageCount?: number;
+                    persisted?: {
+                      todos?: { id: string; text: string; done?: boolean }[];
+                      labels?: { name: string }[];
+                      types?: { name: string }[];
+                      journal?: { kind: string; text: string }[];
+                      savedIds?: string[];
+                      workspaceName?: string;
+                    };
+                  };
+                  const desk = p.persisted ?? {};
+                  const todos = desk.todos ?? [];
+                  const openTodos = todos.filter((t) => !t.done);
+                  const labels = desk.labels ?? [];
+                  const types = desk.types ?? [];
+                  const journal = desk.journal ?? [];
+                  const savedCount = desk.savedIds?.length ?? 0;
+
+                  return (
+                    <div
+                      key={row.id}
+                      className="border-2 border-black p-4"
+                      style={{ boxShadow: "4px 4px 0 #0C0C0C" }}
                     >
-                      <Trash2 size={12} /> Delete
-                    </button>
-                  </div>
-                ))}
+                      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <div className="font-medium text-base">
+                            {desk.workspaceName ?? "Workspace"} ·{" "}
+                            <span
+                              className="text-xs opacity-50"
+                              style={{ fontFamily: "var(--font-mono)" }}
+                            >
+                              id: {row.id}
+                            </span>
+                          </div>
+                          <div className="text-[11px] opacity-50 mt-0.5">
+                            Updated{" "}
+                            {row.updated_at
+                              ? new Date(row.updated_at).toLocaleString()
+                              : p.savedAt
+                                ? new Date(p.savedAt).toLocaleString()
+                                : "—"}
+                          </div>
+                        </div>
+                        <button
+                          className="nb-btn nb-btn-secondary text-xs"
+                          onClick={() => void deleteDbEntry(row.id)}
+                        >
+                          <Trash2 size={12} /> Delete
+                        </button>
+                      </div>
+
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 mb-3">
+                        <div className="border border-black/15 p-2 text-center">
+                          <div className="text-lg font-bold">{todos.length}</div>
+                          <div className="text-[10px] uppercase opacity-50">
+                            To-dos ({openTodos.length} open)
+                          </div>
+                        </div>
+                        <div className="border border-black/15 p-2 text-center">
+                          <div className="text-lg font-bold">{labels.length}</div>
+                          <div className="text-[10px] uppercase opacity-50">
+                            Labels
+                          </div>
+                        </div>
+                        <div className="border border-black/15 p-2 text-center">
+                          <div className="text-lg font-bold">{types.length}</div>
+                          <div className="text-[10px] uppercase opacity-50">
+                            Types
+                          </div>
+                        </div>
+                        <div className="border border-black/15 p-2 text-center">
+                          <div className="text-lg font-bold">
+                            {p.messageCount ?? "—"}
+                          </div>
+                          <div className="text-[10px] uppercase opacity-50">
+                            Messages · {savedCount} saved
+                          </div>
+                        </div>
+                      </div>
+
+                      {labels.length > 0 && (
+                        <div className="mb-2">
+                          <div className="text-[10px] uppercase opacity-50 mb-1">
+                            Labels
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {labels.map((l, i) => (
+                              <span key={i} className="nb-badge text-[11px]">
+                                {l.name}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {types.length > 0 && (
+                        <div className="mb-2">
+                          <div className="text-[10px] uppercase opacity-50 mb-1">
+                            Types
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {types.map((t, i) => (
+                              <span key={i} className="nb-badge text-[11px]">
+                                {t.name}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {openTodos.length > 0 && (
+                        <div className="mb-2">
+                          <div className="text-[10px] uppercase opacity-50 mb-1">
+                            Open to-dos
+                          </div>
+                          <ul className="text-sm space-y-1">
+                            {openTodos.slice(0, 6).map((t) => (
+                              <li key={t.id} className="truncate">
+                                ☐ {t.text}
+                              </li>
+                            ))}
+                            {openTodos.length > 6 && (
+                              <li className="text-xs opacity-50">
+                                +{openTodos.length - 6} more
+                              </li>
+                            )}
+                          </ul>
+                        </div>
+                      )}
+
+                      {journal.length > 0 && (
+                        <div>
+                          <div className="text-[10px] uppercase opacity-50 mb-1">
+                            Journal ({journal.length})
+                          </div>
+                          <ul className="text-sm space-y-1">
+                            {journal.slice(0, 4).map((j, i) => (
+                              <li key={i} className="truncate">
+                                <span className="text-[10px] uppercase opacity-50 mr-1">
+                                  {j.kind}
+                                </span>
+                                {j.text}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {todos.length === 0 &&
+                        labels.length === 0 &&
+                        types.length === 0 &&
+                        journal.length === 0 && (
+                          <p className="text-xs opacity-50">
+                            Empty desk state (no todos, labels, types, or journal).
+                          </p>
+                        )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
