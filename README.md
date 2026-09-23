@@ -3,17 +3,20 @@
 Password-gated WhatsApp correspondence desk for BrandEx.
 
 - **Labels** and **Types** (Trademark, Copyright, Opposition, Ledger Update, NTN — add your own)
-- Saved messages, enhanced to-dos (due date, time, period, priority, notes)
-- Progress & agent memory journal
-- **Daily Work Preview** — day-by-day messages, open to-dos, and journal
-- Upload **.txt** or **.zip** WhatsApp chat exports
-- Google Sheets CSV one-click sync
+- Saved messages, enhanced to-dos (due date, time, period, priority, notes, labels, types, edit)
+- Progress & agent memory journal + sidebar widget
+- **Daily Work Preview** + printable **My Day**
+- Upload **.txt** or **.zip** (button: UPLOAD)
+- Rename / remove chats
+- Confirm dialogs on Sheet / Supabase sync
+- Database store viewer
+- Google Sheets CSV one-click sync (default BrandEx sheet)
 - Supabase desk-state backup (auto-pull on login)
 
 ## Live
 
 - App: https://marque-puce.vercel.app
-- GitHub: https://github.com/0utLawzz/marque
+- GitHub: https://github.com/0utLawzz/WChat-Organizer
 
 ## Login
 
@@ -41,10 +44,12 @@ Redeploy after setting env vars.
 
 ## Google Sheets
 
+Default sheet: https://docs.google.com/spreadsheets/d/1PyvUTN9zR3kgcYIjhZu1inXoX0ZsIvD2SSo1yxrZ26o/edit?gid=307425405
+
 1. Open **Backup & Sync** in the app.
-2. Paste your Google Sheet URL.
+2. Sheet URL is pre-filled (or paste your own).
 3. Optional: Apps Script webhook URL for auto-append.
-4. Click sync — CSV downloads, clipboard copy, sheet opens for File → Import.
+4. Click Sync — confirmation dialog, then CSV + open sheet / webhook POST.
 
 ## Deploy
 
